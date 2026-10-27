@@ -1,0 +1,215 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_DIR="$HOME/.local/share/applications"
+mkdir -p "$APP_DIR"
+
+R=$'\033[0m' G=$'\033[92m' Y=$'\033[93m' C=$'\033[96m' B=$'\033[1m'
+
+CMD=""
+TARGET=""
+INTERACTIVE=false
+LANG_MODE="en"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        new|start) CMD="new"; shift; TARGET="${1:-}"; [[ -n "${TARGET:-}" ]] && shift || true ;;
+        ls|-ls) CMD="ls"; shift ;;
+        rm|delete) CMD="rm"; shift; TARGET="${1:-}"; [[ -n "${TARGET:-}" ]] && shift || true ;;
+        edit|nano) CMD="edit"; shift; TARGET="${1:-}"; [[ -n "${TARGET:-}" ]] && shift || true ;;
+        help|-h|--help) CMD="help"; shift ;;
+        -i|--interactive) INTERACTIVE=true; shift ;;
+        --lang) LANG_MODE="${2:-en}"; shift 2 2>/dev/null || { shift; true; } ;;
+        *) TARGET="${1:-}"; shift ;;
+    esac
+done
+
+add_ext() { [[ "${1:-}" == *.desktop ]] && echo "$1" || echo "${1:-}.desktop"; }
+
+cmt() {
+    local key="${1:-}"
+    if [[ "${LANG_MODE:-}" == "ru" ]]; then
+        case "$key" in
+            name) echo "Название приложения (обязательно)" ;;
+            generic) echo "Короткое общее название (опционально)" ;;
+            comment) echo "Подробное описание (опционально)" ;;
+            exec) echo "Команда запуска. %f=файл, %u=ссылка, %F/%U=список (обязательно)" ;;
+            icon) echo "Путь до иконки или имя из темы иконок" ;;
+            terminal) echo "Запускать в терминале? true/false" ;;
+            type) echo "Application, Link или Directory" ;;
+            categories) echo "Категории через точку с запятой. Пример: Utility;Development;" ;;
+            keywords) echo "Ключевые слова для поиска. Пример: tool;app;cli;" ;;
+            startup_notify) echo "Показывать уведомление о запуске? true/false" ;;
+            mimetype) echo "Поддерживаемые MIME-типы. Пример: text/plain;application/pdf;" ;;
+            url) echo "Ссылка для Type=Link" ;;
+            pref_lang) echo "Предпочитаемые языки. Пример: en;ru;" ;;
+            *) echo "" ;;
+        esac
+    else
+        case "$key" in
+            name) echo "Application name (required)" ;;
+            generic) echo "Short generic name (optional)" ;;
+            comment) echo "Longer description (optional)" ;;
+            exec) echo "Command to execute. %f=file, %u=url, %F/%U=list (required)" ;;
+            icon) echo "Absolute path or icon name from theme" ;;
+            terminal) echo "Run in terminal? true/false" ;;
+            type) echo "Application, Link, or Directory" ;;
+            categories) echo "Semicolon-separated. e.g., Utility;Development;" ;;
+            keywords) echo "Search keywords. e.g., tool;app;cli;" ;;
+            startup_notify) echo "Show startup notification? true/false" ;;
+            mimetype) echo "Handled MIME types. e.g., text/plain;application/pdf;" ;;
+            url) echo "URL for Type=Link" ;;
+            pref_lang) echo "Preferred language codes. e.g., en;ru;" ;;
+            *) echo "" ;;
+        esac
+    fi
+}
+
+generate_template() {
+    local file="${1:-}" name="${2:-}" exec_cmd="${3:-}" icon="${4:-}" term="${5:-}" comment="${6:-}"
+    cat > "$file" <<EOF
+[Desktop Entry]
+# $(cmt name)
+Name=${name:-New Application}
+
+# $(cmt generic)
+# GenericName=
+
+# $(cmt comment)
+Comment=${comment:-A brief description of the application}
+
+# $(cmt exec)
+Exec=${exec_cmd:-/path/to/executable %f}
+
+# $(cmt icon)
+Icon=${icon:-application-x-executable}
+
+# $(cmt terminal)
+Terminal=${term:-false}
+
+# $(cmt type)
+Type=Application
+
+# ==========================================
+# ADVANCED / REFERENCE FIELDS (Commented)
+# ==========================================
+# $(cmt categories)
+# Categories=
+
+# $(cmt keywords)
+# Keywords=
+
+# $(cmt startup_notify)
+# StartupNotify=false
+
+# $(cmt mimetype)
+# MimeType=
+
+# $(cmt url) (Use if Type=Link)
+# URL=
+
+# $(cmt pref_lang)
+# PrefersNonDefaultGPU=false
+EOF
+    echo -e "${G}[+]${R} Created: $file"
+}
+
+interactive_wizard() {
+    local file="${1:-}"
+    local prompt_name="Application Name"
+    local prompt_exec="Executable Command (e.g., /usr/bin/kitty)"
+    local prompt_icon="Icon Path/Name (press Enter for default)"
+    local prompt_term="Run in Terminal? (y/n)"
+    local prompt_comment="Description (press Enter for default)"
+
+    if [[ "${LANG_MODE:-}" == "ru" ]]; then
+        prompt_name="Название приложения"
+        prompt_exec="Путь до исполняемого файла (например, /usr/bin/kitty)"
+        prompt_icon="Путь до иконки (Enter для стандартной)"
+        prompt_term="Запускать в терминале? (y/n)"
+        prompt_comment="Описание (Enter для стандартного)"
+    fi
+
+    echo -e "\n${B}🖥️  Interactive Desktop File Generator${R}\n"
+    read -rp "$prompt_name: " in_name || true
+    read -rp "$prompt_exec: " in_exec || true
+    read -rp "$prompt_icon: " in_icon || true
+    read -rp "$prompt_term (y/n): " in_term || true
+    read -rp "$prompt_comment: " in_comment || true
+
+    [[ -z "${in_name:-}" ]] && in_name="MyApp"
+    [[ -z "${in_exec:-}" ]] && in_exec="/usr/bin/example"
+    [[ -z "${in_icon:-}" ]] && in_icon="application-x-executable"
+    [[ "${in_term:-}" =~ ^[yY] ]] && in_term="true" || in_term="false"
+    [[ -z "${in_comment:-}" ]] && in_comment="Generated by deskgen"
+
+    generate_template "$file" "$in_name" "$in_exec" "$in_icon" "$in_term" "$in_comment"
+}
+
+cmd_new() {
+    [[ -z "${TARGET:-}" ]] && { echo -e "${R}[x]${R} Usage: deskgen new <name>"; exit 1; }
+    local file="$APP_DIR/$(add_ext "$TARGET")"
+    [[ -f "$file" ]] && { echo -e "${Y}[!]${R} File exists. Use 'edit' to modify."; exit 1; }
+    if [[ "${INTERACTIVE:-}" == "true" ]]; then
+        interactive_wizard "$file"
+    else
+        generate_template "$file"
+    fi
+    command -v update-desktop-database &>/dev/null && update-desktop-database "$APP_DIR" 2>/dev/null || true
+}
+
+cmd_ls() {
+    echo -e "${B}📂 User Applications:${R}"
+    local count=0
+    for f in "$APP_DIR"/*.desktop; do
+        [[ -f "$f" ]] && { echo -e "  ${G}$(basename "$f")${R}"; ((count++)) || true; }
+    done
+    [[ $count -eq 0 ]] && echo "  (none)"
+}
+
+cmd_rm() {
+    [[ -z "${TARGET:-}" ]] && { echo -e "${R}[x]${R} Usage: deskgen rm <name>"; exit 1; }
+    local file="$APP_DIR/$(add_ext "$TARGET")"
+    [[ ! -f "$file" ]] && { echo -e "${R}[x]${R} Not found: $file"; exit 1; }
+    read -rp "Delete $(basename "$file")? [y/N] " ans || true
+    [[ "${ans:-}" =~ ^[yY] ]] && { rm -f "$file"; echo -e "${G}[+]${R} Deleted."; command -v update-desktop-database &>/dev/null && update-desktop-database "$APP_DIR" 2>/dev/null || true; } || echo -e "${C}[i]${R} Cancelled."
+}
+
+cmd_edit() {
+    [[ -z "${TARGET:-}" ]] && { echo -e "${R}[x]${R} Usage: deskgen edit <name>"; exit 1; }
+    local file="$APP_DIR/$(add_ext "$TARGET")"
+    [[ ! -f "$file" ]] && { echo -e "${R}[x]${R} Not found. Create it first: deskgen new $TARGET"; exit 1; }
+    ${EDITOR:-nano} "$file"
+}
+
+cmd_help() {
+    cat <<EOF
+${B}deskgen${R} - Lightweight .desktop file manager
+
+${B}Usage:${R}
+  deskgen new <name>       Create new .desktop file
+  deskgen ls               List all user .desktop files
+  deskgen rm <name>        Delete a .desktop file
+  deskgen edit <name>      Open in editor (\$EDITOR or nano)
+  deskgen help             Show this help
+
+${B}Flags:${R}
+  -i, --interactive        Guided creation wizard
+  --lang ru|en             Comments language (default: en)
+
+${B}Examples:${R}
+  deskgen new mytool
+  deskgen new mytool -i --lang ru
+  deskgen edit mytool
+  deskgen rm mytool
+EOF
+}
+
+case "${CMD:-help}" in
+    new|start) cmd_new ;;
+    ls) cmd_ls ;;
+    rm|delete) cmd_rm ;;
+    edit|nano) cmd_edit ;;
+    help) cmd_help ;;
+    *) cmd_help ;;
+esac

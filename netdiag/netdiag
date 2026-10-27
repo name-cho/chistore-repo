@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+R=$'\033[0m' G=$'\033[92m' Y=$'\033[93m' C=$'\033[96m' B=$'\033[1m'
+
+ok() { printf "${G}[+]${R} %s\n" "$1"; }
+warn() { printf "${Y}[!]${R} %s\n" "$1" >&2; }
+err() { printf "${R}[x]${R} %s\n" "$1" >&2; }
+
+get_public_ip() {
+    curl -fsSL --connect-timeout 5 --max-time 10 https://ifconfig.me 2>/dev/null || \
+    curl -fsSL --connect-timeout 5 --max-time 10 https://api.ipify.org 2>/dev/null || \
+    echo "unreachable"
+}
+
+get_local_ips() {
+    if command -v ip >/dev/null 2>&1; then
+        ip -br addr | awk '$2=="UP" && $3~/[0-9]/ {printf "%-8s %s\n", $1, $3}'
+    elif command -v ifconfig >/dev/null 2>&1; then
+        ifconfig | awk '/inet / && $2!="127.0.0.1" {printf "%-8s %s\n", prev,$2} {prev=$1}'
+    else echo "  unknown"; fi
+}
+
+get_gateway() {
+    if command -v ip >/dev/null 2>&1; then ip route | awk '/default/ {print $3; exit}'
+    elif command -v netstat >/dev/null 2>&1; then netstat -rn | awk '/default/ {print $2; exit}'
+    elif command -v route >/dev/null 2>&1; then route -n get default 2>/dev/null | awk '/gateway:/ {print $2}'
+    else echo "unknown"; fi
+}
+
+get_dns() {
+    if [ -f /etc/resolv.conf ]; then grep -E '^nameserver' /etc/resolv.conf | awk '{print $2}' | head -3
+    else echo "unknown"; fi
+}
+
+cmd_ip() {
+    echo -e "${B}🌐 Network Info:${R}"
+    echo -e "  ${C}Public IP:${R}  $(get_public_ip)"
+    echo -e "  ${C}Gateway:${R}    $(get_gateway)"
+    echo -e "  ${C}DNS Servers:${R}"
+    get_dns | while read -r d; do echo -e "    - $d"; done
+    echo -e "  ${C}Local Interfaces:${R}"
+    get_local_ips | while read -r iface addr; do echo -e "    ${G}${iface}${R}: $addr"; done
+}
+
+cmd_ping() {
+    local host="${1:-8.8.8.8}"
+    echo -e "${B}📡 Ping: ${host}${R}"
+    if ping -c 5 -W 2 "$host" >/dev/null 2>&1; then
+        ping -c 5 -W 2 "$host" 2>/dev/null | tail -2
+    else
+        err "Host unreachable or ping blocked"
+    fi
+}
+
+cmd_dns() {
+    local domain="${1:-google.com}"
+    echo -e "${B}🔍 DNS Resolve: ${domain}${R}"
+    if command -v dig >/dev/null 2>&1; then
+        dig +short "$domain" A 2>/dev/null | head -5
+    elif command -v nslookup >/dev/null 2>&1; then
+        nslookup "$domain" 2>/dev/null | awk '/^Address: / && !/#/ {print $2}'
+    elif command -v getent >/dev/null 2>&1; then
+        getent ahostsv4 "$domain" | awk '{print $1}' | sort -u | head -5
+    else
+        err "No DNS resolver found"
+    fi
+}
+
+cmd_port() {
+    local host="${1:?Usage: netdiag port <host> <port>}" port="${2:?}"
+    echo -e "${B}🔌 Port Check: ${host}:${port}${R}"
+    if timeout 2 bash -c "echo >/dev/tcp/$host/$port" 2>/dev/null; then
+        ok "OPEN"
+    else
+        warn "CLOSED/FILTERED"
+    fi
+}
+
+cmd_speed() {
+    local url="https://speed.cloudflare.com/__down?bytes=5000000"
+    echo -e "${B}⚡ Download Test (~5MB)${R}"
+    local start end time_taken speed
+    start=$(date +%s%N)
+    curl -fsSL -o /dev/null -w "%{http_code}" "$url" >/dev/null 2>&1 || { err "Test failed"; return 1; }
+    end=$(date +%s%N)
+    time_taken=$(( (end - start) / 1000000 ))
+    speed=$(echo "scale=2; 5000 / $time_taken" | bc 2>/dev/null || echo "?")
+    echo -e "  ${C}Time:${R} ${time_taken}ms  |  ${C}Avg Speed:${R} ${speed} MB/s"
+}
+
+print_help() {
+    cat <<EOF
+${B}netdiag${R} - Lightweight network diagnostics
+
+${B}Usage:${R}
+  netdiag ip             Show public/local IP, gateway, DNS
+  netdiag ping <host>    Ping target (5 packets)
+  netdiag dns <domain>   Resolve domain
+  netdiag port <h> <p>   Check if port is open
+  netdiag speed          Quick download test (~5MB)
+  netdiag -h, --help     Show this help
+EOF
+}
+
+case "${1:-}" in
+    -h|--help) print_help ;;
+    ip) cmd_ip ;;
+    ping) cmd_ping "${2:-}" ;;
+    dns) cmd_dns "${2:-}" ;;
+    port) cmd_port "$2" "$3" ;;
+    speed) cmd_speed ;;
+    *) print_help; exit 0 ;;
+esac

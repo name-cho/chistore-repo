@@ -1,0 +1,96 @@
+{
+  "schema": 1,
+  "name": "chistore-repo",
+  "generated": "2026-10-27T08:58:42Z",
+  "packages": [
+    {
+      "id": "deskgen",
+      "name": "DeskGen",
+      "description": "CLI tool to generate, manage and edit .desktop files with interactive wizard & bilingual comments",
+      "version": "1.1.4",
+      "size": "7.1K",
+      "type": "single",
+      "main": "deskgen",
+      "author": "name-cho",
+      "homepage": "https://gitgud.io/name-cho",
+      "source": "https://gitgud.io/name-cho/chistore-repo/-/raw/main/deskgen",
+      "dependencies": [
+        {
+          "manager": "sys",
+          "packages": [
+            "coreutils",
+            "nano",
+            "desktop-file-utils"
+          ]
+        }
+      ],
+      "sha256": "7b7b082d47537d0b8cbc57d9da6737d04aad580cecbb3f5900511aa14d1bb611"
+    },
+    {
+      "id": "envsnap",
+      "name": "EnvSnap",
+      "description": "Snapshot system & environment state with diff support",
+      "version": "1.0.1",
+      "size": "3.8K",
+      "type": "single",
+      "main": "envsnap",
+      "author": "name-cho",
+      "homepage": "https://gitgud.io/name-cho",
+      "source": "https://gitgud.io/name-cho/chistore-repo/-/raw/main/envsnap",
+      "dependencies": [
+        {
+          "manager": "sys",
+          "packages": [
+            "curl",
+            "bash"
+          ]
+        }
+      ],
+      "sha256": "e6107bc55160ee4b328cbb5d28dce0d8fcb9d336fd2bb245fee24651db93cd00"
+    },
+    {
+      "id": "netdiag",
+      "name": "netdiag",
+      "description": "Fast network diagnostics: IP, ping, DNS, port check, speed test",
+      "version": "1.0.1",
+      "size": "3.7K",
+      "type": "single",
+      "main": "netdiag",
+      "author": "name-cho",
+      "homepage": "https://gitgud.io/name-cho",
+      "source": "https://gitgud.io/name-cho/chistore-repo/-/raw/main/netdiag",
+      "dependencies": [
+        {
+          "manager": "sys",
+          "packages": [
+            "curl",
+            "bash"
+          ]
+        }
+      ],
+      "sha256": "1abd5658644e493c3dc133375e74289b2b0c334f56c13ae3afb8b47fa8377eee"
+    },
+    {
+      "id": "pystat",
+      "name": "PyStat",
+      "description": "Real-time system monitor with rich TUI",
+      "version": "1.0.0",
+      "size": "1K",
+      "type": "python",
+      "main": "pystat",
+      "author": "name-cho",
+      "homepage": "https://gitgud.io/name-cho",
+      "source": "https://gitgud.io/name-cho/chistore-repo/-/raw/main/pystat",
+      "dependencies": [
+        {
+          "manager": "pip",
+          "packages": [
+            "psutil",
+            "rich"
+          ]
+        }
+      ],
+      "sha256": "9b40dd5941aa10c4b814387befd7c3a6d91ff91b9116af755b738199ec7dcb76"
+    }
+  ]
+}

@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DATA_DIR="$HOME/.local/share/envsnap"
+mkdir -p "$DATA_DIR"
+
+R=$'\033[0m' G=$'\033[92m' Y=$'\033[93m' C=$'\033[96m' B=$'\033[1m'
+
+ok() { printf "${G}[+]${R} %s\n" "$1"; }
+err() { printf "${R}[x]${R} %s\n" "$1" >&2; }
+info() { printf "${C}[i]${R} %s\n" "$1"; }
+
+get_ram() {
+    if command -v free >/dev/null 2>&1; then
+        free -m | awk '/^Mem:/ {printf "%.0fMB used / %.0fMB total", $3, $2}'
+    elif command -v sysctl >/dev/null 2>&1; then
+        local total
+        total=$(sysctl -n hw.memsize 2>/dev/null | awk '{printf "%.0fMB", $1/1048576}')
+        echo "${total:-?} used / ${total:-?} total"
+    else
+        echo "N/A"
+    fi
+}
+
+get_disk() {
+    df -h / 2>/dev/null | awk 'NR==2 {printf "%s used / %s total", $3, $2}' || echo "N/A"
+}
+
+get_net() {
+    if command -v ip >/dev/null 2>&1; then
+        ip -br addr 2>/dev/null | awk '$2=="UP" && $3~/[0-9]/ {printf "%s:%s ", $1, $3}'
+    elif command -v ifconfig >/dev/null 2>&1; then
+        ifconfig 2>/dev/null | awk '/inet / && $2!="127.0.0.1" {printf "%s:%s ", prev,$2} {prev=$1}'
+    else
+        echo "N/A"
+    fi
+    echo
+}
+
+get_top_procs() {
+    ps aux --sort=-%mem 2>/dev/null | awk 'NR>1 && NR<=6 {printf "%s(%.1f%%) ", $11, $4}' || echo "N/A"
+}
+
+get_listeners() {
+    if command -v ss >/dev/null 2>&1; then
+        ss -tlnp 2>/dev/null | awk 'NR>1 {print $5}'
+    elif command -v netstat >/dev/null 2>&1; then
+        netstat -tlnp 2>/dev/null | awk 'NR>1 {print $4}'
+    else
+        echo "N/A"
+    fi
+}
+
+cmd_capture() {
+    local out="${1:-$DATA_DIR/snap_$(date +%Y%m%d_%H%M%S).env}"
+    mkdir -p "$(dirname "$out")"
+    cat > "$out" <<EOF
+# ENVSANP CAPTURE
+# OS: $(uname -sr 2>/dev/null || echo "Unknown")
+# DATE: $(date -u 2>/dev/null || echo "Unknown")
+# RAM: $(get_ram)
+# DISK: $(get_disk)
+# NET: $(get_net)
+# TOP_PROCS: $(get_top_procs)
+--- ENV ---
+$(env | sort 2>/dev/null || echo "none")
+--- PATH ---
+$(echo "$PATH" | tr ':' '\n')
+--- ALIASES ---
+$(alias 2>/dev/null || echo "none")
+--- LISTENING_PORTS ---
+$(get_listeners)
+EOF
+    ok "Snapshot saved: ${B}$out${R}"
+}
+
+cmd_show() {
+    local file="${1:-}"
+    if [ -z "$file" ]; then
+        file=$(ls -t "$DATA_DIR"/snap_*.env 2>/dev/null | head -1) || true
+    fi
+    if [ -z "$file" ] || [ ! -f "$file" ]; then
+        err "No snapshot found. Run 'envsnap capture' first."
+        exit 1
+    fi
+    echo -e "${B}📄 Snapshot:${R} $file"
+    echo "-----------------------------------"
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^# ]]; then
+            echo -e "${C}${line}${R}"
+        elif [[ "$line" =~ ^--- ]]; then
+            echo -e "${Y}${line}${R}"
+        else
+            echo "  $line"
+        fi
+    done < "$file"
+}
+
+cmd_diff() {
+    if [ $# -lt 2 ]; then
+        err "Usage: envsnap diff <snapshot1> <snapshot2>"
+        exit 1
+    fi
+    local f1="$1" f2="$2"
+    if [ ! -f "$f1" ]; then
+        err "File not found: $f1"
+        exit 1
+    fi
+    if [ ! -f "$f2" ]; then
+        err "File not found: $f2"
+        exit 1
+    fi
+    diff --color=always <(grep -v "^#" "$f1" | sort) <(grep -v "^#" "$f2" | sort) | less -R
+}
+
+cmd_list() {
+    local snaps
+    snaps=$(ls -t "$DATA_DIR"/snap_*.env 2>/dev/null) || { info "No snapshots found."; return 0; }
+    echo -e "${B}📂 Available Snapshots:${R}"
+    while IFS= read -r f; do
+        if [ -f "$f" ]; then
+            echo "  ${G}$(basename "$f")${R}"
+        fi
+    done <<< "$snaps"
+}
+
+print_help() {
+    cat <<EOF
+${B}envsnap${R} - System & Environment State Manager
+
+${B}Usage:${R}
+  envsnap capture [file]    Capture current system state
+  envsnap show [file]       Show a snapshot (latest by default)
+  envsnap diff <f1> <f2>    Diff two snapshots (ignores metadata)
+  envsnap list              List all captured snapshots
+  envsnap -h, --help        Show this help
+
+${B}Examples:${R}
+  envsnap capture
+  envsnap show
+  envsnap diff snap_old.env snap_new.env
+  envsnap list
+EOF
+}
+
+case "${1:-}" in
+    -h|--help) print_help ;;
+    capture) cmd_capture "${2:-}" ;;
+    show) cmd_show "${2:-}" ;;
+    diff) cmd_diff "$2" "$3" ;;
+    list) cmd_list ;;
+    *) print_help; exit 0 ;;
+esac
